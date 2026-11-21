@@ -39,7 +39,7 @@ Not affiliated with, endorsed by, or connected to Hacker News or Y Combinator.
 - The Past tab has a date heading, previous/next day arrows, a row of nearby days and a calendar to pick any date back to 2007
 
 **Stats**
-- The chart button in the top bar opens `/stats`, a look at the last 30, 15 or 7 days, or the last full day (`?days=`): totals, a daily chart (hourly for one day) of comments, stories and 100-point stories, top stories, the longest threads and most heated debates, top sites and submitters, a heatmap of when popular stories were posted, the most common title words, the best Show HN and Ask HN posts, and a few oddities
+- The chart button in the top bar opens `/stats`, a look at the last 30, 15 or 7 days, the last full day (`?days=`), or a custom range of 1 to 90 days picked from quick ranges or a calendar (`?from=YYYY-MM-DD&to=YYYY-MM-DD`, UTC): totals, a daily chart (hourly for one day) of comments, stories and 100-point stories, top stories, the longest threads and most heated debates, top sites and submitters, a heatmap of when popular stories were posted, the most common title words, the best Show HN and Ask HN posts, and a few oddities
 - Data comes from the [HN Search API](https://hn.algolia.com/api) (Algolia), fetched one UTC day at a time by the background worker and cached locally
 
 **Keyboard** (press `?` on any page)
@@ -91,7 +91,7 @@ src/
     topics.js          AI topic labels and filter row
     list.js            story lists, past-day navigator
     comments.js        threads, comment lists, inline replies
-    stats.js           the /stats page (last 30 / 15 / 7 / 1 days)
+    stats.js           the /stats page (last 30 / 15 / 7 / 1 days, or a custom range)
     keyboard.js        shortcuts and focus
     main.js            page detection, rendering, fallback
   popup/               settings UI

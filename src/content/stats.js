@@ -1,4 +1,4 @@
-// Stats: the last 30, 15, 7 or 1 days on HN, from the HN Algolia API. The background worker
+// Stats: the last 30, 15, 7 or 1 days on HN, or a custom range of up to 90 days, from the HN Algolia API. The background worker
 // fetches and caches one UTC day at a time; everything here is aggregation and rendering.
 (() => {
   const HNX = globalThis.HNX;
@@ -12,6 +12,8 @@
   ];
   const HIT = 100; // points for a story to count as a hit
   const POOL = 5; // days fetched at once
+  const MAX_DAYS = 90; // longest custom range
+  const FIRST_DAY = '2006-10-09'; // the first day with HN stories
 
   const AI_RE = /\b(ai|agi|llms?|gpt[\w.-]*|chatgpt|openai|anthropic|claude|gemini|deepmind|copilot|mistral|deepseek|llama|qwen|grok|neural|machine learning|agents?|agentic|vibe[- ]cod\w*|transformers?|diffusion)\b/i;
   const TOKEN = /[\p{L}\p{N}][\p{L}\p{N}'’.+#-]*[\p{L}\p{N}+#]|[\p{L}\p{N}]/gu;
@@ -28,12 +30,16 @@
 
   const pad = (x) => String(x).padStart(2, '0');
 
-  // The last `count` complete UTC days, oldest first.
-  const dayList = (count) => {
+  // Midnight UTC of the last complete day.
+  const lastDay = () => {
     const n = new Date();
-    const today = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate());
-    return Array.from({ length: count }, (_, i) => new Date(today - (count - i) * 864e5));
+    return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()) - 864e5);
   };
+
+  // `count` UTC days ending on `end` (default: the last complete day), oldest first.
+  const dayList = (count, end = lastDay()) => Array.from({ length: count }, (_, i) => new Date(+end - (count - 1 - i) * 864e5));
+
+  const parseDay = (s) => (/^\d{4}-\d{2}-\d{2}$/.test(s || '') && !Number.isNaN(Date.parse(`${s}T00:00:00Z`)) ? new Date(`${s}T00:00:00Z`) : null);
 
   const ask = async (msg) => {
     try {
@@ -450,7 +456,7 @@
             'a',
             {
               class: `hnx-st-word${list.indexOf(w) < 3 ? ' hnx-st-word-top' : ''}`,
-              href: `https://hn.algolia.com/?dateRange=pastMonth&type=story&sort=byPopularity&query=${encodeURIComponent(w.text)}`,
+              href: `https://hn.algolia.com/?dateRange=custom&dateStart=${+data.daily[0].date / 1000}&dateEnd=${+data.daily.at(-1).date / 1000 + 86400}&type=story&sort=byPopularity&query=${encodeURIComponent(w.text)}`,
               style: `--t: ${t(w.n).toFixed(3)}; --d: ${i * 15}ms`,
               title: `In ${w.n} titles`,
             },
@@ -529,9 +535,257 @@
       h('div', { class: 'hnx-st-card hnx-st-ghost' }),
     );
 
+  /* ---------- Custom range picker ---------- */
+
+  // A popover with quick ranges and a two-month calendar. Click a start day, then an end day
+  // (or press Show right away for a single day). Days are UTC, up to MAX_DAYS long.
+  const rangePicker = (onPick) => {
+    const DAY = 864e5;
+    const first = parseDay(FIRST_DAY);
+    let last = lastDay();
+    let a = null; // range start
+    let b = null; // range end, or null while picking
+    let hover = null;
+    let view = null; // first day of the left-hand month
+    let focusDay = null;
+    let toggle = null;
+
+    const monthStart = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+    const addMonths = (d, n) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1));
+    const span = (x, y) => Math.round(Math.abs(y - x) / DAY) + 1;
+    const order = (x, y) => (x <= y ? [x, y] : [y, x]);
+    const fmt = (d, year) => fmtDay(d, { month: 'short', day: 'numeric', ...(year && { year: 'numeric' }) });
+    const fmtRange = (x, y) =>
+      +x === +y ? fmtDay(x, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : `${fmt(x, x.getUTCFullYear() !== y.getUTCFullYear())} – ${fmt(y, true)}`;
+
+    // Quick ranges, all ending on or before the last complete day.
+    const presets = () => {
+      const y = last;
+      const wd = (y.getUTCDay() + 6) % 7; // 0 = Monday
+      const lastSunday = new Date(+y - ((wd + 1) % 7) * DAY);
+      const thisMonth = monthStart(y);
+      const prevMonth = addMonths(thisMonth, -1);
+      return [
+        ['Yesterday', y, y],
+        ['Last 2 days', new Date(+y - DAY), y],
+        ['Last 3 days', new Date(+y - 2 * DAY), y],
+        ['Last week', new Date(+lastSunday - 6 * DAY), lastSunday, 'Monday to Sunday'],
+        +thisMonth < +y && ['This month', thisMonth, y, 'So far'],
+        ['Last month', prevMonth, new Date(+thisMonth - DAY)],
+        [`Last ${MAX_DAYS} days`, new Date(+y - (MAX_DAYS - 1) * DAY), y],
+      ].filter(Boolean);
+    };
+
+    const quick = h('div', { class: 'hnx-st-rp-quick', role: 'group', 'aria-label': 'Quick ranges' });
+    const months = h('div', { class: 'hnx-st-rp-months' });
+    const prev = h('button', { type: 'button', class: 'hnx-st-rp-nav hnx-st-rp-prev', 'aria-label': 'Previous month' }, icon('chevron'));
+    const next = h('button', { type: 'button', class: 'hnx-st-rp-nav hnx-st-rp-next', 'aria-label': 'Next month' }, icon('chevron'));
+    const summary = h('div', { class: 'hnx-st-rp-summary', 'aria-live': 'polite' });
+    const apply = h('button', { type: 'button', class: 'hnx-btn hnx-btn-primary' }, 'Show');
+    const cancel = h('button', { type: 'button', class: 'hnx-btn' }, 'Cancel');
+    const el = h(
+      'div',
+      { class: 'hnx-st-rp', role: 'dialog', 'aria-label': 'Choose dates', hidden: true },
+      quick,
+      h('div', { class: 'hnx-st-rp-cal' }, h('div', { class: 'hnx-st-rp-navs' }, prev, next), months),
+      h('div', { class: 'hnx-st-rp-foot' }, summary, h('div', { class: 'hnx-st-rp-actions' }, cancel, apply)),
+    );
+
+    const disabled = (d) => d < first || d > last || (a && !b && span(a, d) > MAX_DAYS);
+
+    const month = (start) => {
+      const cells = [];
+      const lead = (start.getUTCDay() + 6) % 7;
+      for (let i = 0; i < lead; i++) cells.push(h('span'));
+      const n = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0)).getUTCDate();
+      for (let i = 0; i < n; i++) {
+        const d = new Date(+start + i * DAY);
+        cells.push(h('button', { type: 'button', class: 'hnx-st-rp-day', tabindex: '-1', dataset: { t: +d }, 'aria-label': fmtDay(d, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) }, String(i + 1)));
+      }
+      // 2024-01-01 was a Monday.
+      const heads = Array.from({ length: 7 }, (_, i) => h('span', { class: 'hnx-st-rp-wd', 'aria-hidden': 'true' }, new Date(Date.UTC(2024, 0, 1 + i)).toLocaleDateString(undefined, { weekday: 'narrow', timeZone: 'UTC' })));
+      return h('div', { class: 'hnx-st-rp-month' }, h('div', { class: 'hnx-st-rp-title' }, fmtDay(start, { month: 'long', year: 'numeric' })), h('div', { class: 'hnx-st-rp-grid', role: 'group', 'aria-label': fmtDay(start, { month: 'long', year: 'numeric' }) }, heads, cells));
+    };
+
+    // Two months side by side, or one on narrow screens.
+    const count = () => (matchMedia('(max-width: 760px)').matches ? 1 : 2);
+
+    const buildMonths = () => {
+      const n = count();
+      months.replaceChildren(...Array.from({ length: n }, (_, i) => month(addMonths(view, i))));
+      prev.disabled = view <= monthStart(first);
+      next.disabled = addMonths(view, n - 1) >= monthStart(last);
+    };
+
+    // Update day states, the summary and the buttons without rebuilding the grid.
+    const paint = () => {
+      const end = b || (a && hover) || a;
+      const [lo, hi] = a ? order(a, end) : [null, null];
+      for (const btn of months.querySelectorAll('.hnx-st-rp-day')) {
+        const t = Number(btn.dataset.t);
+        const inRange = lo && t >= +lo && t <= +hi;
+        btn.disabled = disabled(new Date(t));
+        btn.classList.toggle('hnx-st-rp-in', !!inRange);
+        btn.classList.toggle('hnx-st-rp-start', !!lo && t === +lo);
+        btn.classList.toggle('hnx-st-rp-end', !!hi && t === +hi);
+        btn.classList.toggle('hnx-st-rp-preview', !!inRange && !b);
+        btn.setAttribute('aria-pressed', String(!!inRange));
+        btn.tabIndex = focusDay && t === +focusDay ? 0 : -1;
+      }
+      const presetMatch = (p) => a && b && +p[1] === +lo && +p[2] === +hi;
+      for (const [i, btn] of [...quick.children].entries()) btn.setAttribute('aria-pressed', String(presetMatch(presetList[i])));
+      apply.disabled = !a;
+      if (!a) summary.replaceChildren(h('b', null, 'Pick a start date'));
+      else if (!b) summary.replaceChildren(h('b', null, fmtRange(lo, hi)), h('span', null, hover && +hover !== +a ? plural(span(lo, hi), 'day') : 'Now pick an end date, or press Show for just this day'));
+      else summary.replaceChildren(h('b', null, fmtRange(lo, hi)), h('span', null, plural(span(lo, hi), 'day')));
+    };
+
+    let presetList = [];
+    const buildQuick = () => {
+      presetList = presets();
+      quick.replaceChildren(
+        ...presetList.map(([label, from, to, note]) =>
+          h('button', { type: 'button', class: 'hnx-st-rp-preset', title: note ? `${note}: ${fmtRange(from, to)}` : fmtRange(from, to), onclick: () => finish(from, to) }, label),
+        ),
+      );
+    };
+
+    const showMonthOf = (d) => {
+      const m = monthStart(d);
+      const n = count();
+      if (m < view || m > addMonths(view, n - 1)) {
+        view = m > view ? addMonths(m, 1 - n) : m;
+        buildMonths();
+      }
+    };
+
+    const finish = (from, to) => {
+      close();
+      onPick(...order(from, to));
+    };
+
+    const pick = (d) => {
+      if (!a || b) [a, b] = [d, null];
+      else [a, b] = order(a, d);
+      hover = null;
+      focusDay = d;
+      paint();
+    };
+
+    months.addEventListener('click', (e) => {
+      const btn = e.target.closest('.hnx-st-rp-day');
+      if (btn && !btn.disabled) pick(new Date(Number(btn.dataset.t)));
+    });
+    months.addEventListener('dblclick', (e) => {
+      const btn = e.target.closest('.hnx-st-rp-day');
+      if (btn && !btn.disabled) finish(new Date(Number(btn.dataset.t)), new Date(Number(btn.dataset.t)));
+    });
+    months.addEventListener('pointerover', (e) => {
+      const btn = e.target.closest('.hnx-st-rp-day');
+      const t = btn && !btn.disabled ? Number(btn.dataset.t) : null;
+      if (a && !b && t !== (hover && +hover)) {
+        hover = t == null ? null : new Date(t);
+        paint();
+      }
+    });
+    months.addEventListener('pointerleave', () => {
+      if (hover) {
+        hover = null;
+        paint();
+      }
+    });
+    // Arrow keys move between days, Enter / Space picks.
+    months.addEventListener('keydown', (e) => {
+      const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+      if (!step || !focusDay) return;
+      e.preventDefault();
+      const d = new Date(Math.min(+last, Math.max(+first, +focusDay + step * DAY)));
+      if (disabled(d)) return;
+      focusDay = d;
+      showMonthOf(d);
+      if (a && !b) hover = d;
+      paint();
+      months.querySelector(`[data-t="${+d}"]`)?.focus();
+    });
+    prev.addEventListener('click', () => {
+      view = addMonths(view, -1);
+      buildMonths();
+      paint();
+    });
+    next.addEventListener('click', () => {
+      view = addMonths(view, 1);
+      buildMonths();
+      paint();
+    });
+    apply.addEventListener('click', () => a && finish(a, b || a));
+    cancel.addEventListener('click', () => close());
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        close();
+      }
+    });
+    const outside = (e) => {
+      if (!el.contains(e.target) && !toggle?.contains(e.target)) close(false);
+    };
+
+    const open = (days) => {
+      last = lastDay();
+      [a, b] = [days[0], days.at(-1)];
+      hover = null;
+      focusDay = b;
+      view = addMonths(monthStart(b), 1 - count());
+      if (view < monthStart(first)) view = monthStart(first);
+      buildQuick();
+      buildMonths();
+      paint();
+      el.hidden = false;
+      toggle?.setAttribute('aria-expanded', 'true');
+      document.addEventListener('pointerdown', outside, true);
+      months.querySelector(`[data-t="${+b}"]`)?.focus();
+    };
+
+    function close(refocus = true) {
+      if (el.hidden) return;
+      el.hidden = true;
+      toggle?.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('pointerdown', outside, true);
+      if (refocus && el.contains(document.activeElement)) toggle?.focus();
+    }
+
+    return { el, open, close, isOpen: () => !el.hidden, bindToggle: (t) => (toggle = t) };
+  };
+
   /* ---------- Page ---------- */
 
-  const periodFromUrl = () => PERIODS.find((p) => p.days === Number(new URLSearchParams(location.search).get('days'))) || PERIODS[0];
+  // A custom range, clamped to days HN has data for and at most MAX_DAYS long.
+  const customPeriod = (from, to) => {
+    const first = parseDay(FIRST_DAY);
+    const last = lastDay();
+    if (from > to) [from, to] = [to, from];
+    to = new Date(Math.min(Math.max(+to, +first), +last));
+    from = new Date(Math.min(Math.max(+from, +first, +to - (MAX_DAYS - 1) * 864e5), +to));
+    const days = Math.round((to - from) / 864e5) + 1;
+    return {
+      custom: true,
+      days,
+      end: to,
+      label: 'Custom',
+      noun: days === 1 ? 'day' : 'period',
+      title: days === 1 ? 'A day on Hacker News' : `${days} days on Hacker News`,
+      href: `stats?from=${toIso(from)}&to=${toIso(to)}`,
+    };
+  };
+
+  const periodFromUrl = () => {
+    const q = new URLSearchParams(location.search);
+    const from = parseDay(q.get('from'));
+    const to = parseDay(q.get('to'));
+    if (from || to) return customPeriod(from || to, to || from);
+    return PERIODS.find((p) => p.days === Number(q.get('days'))) || PERIODS[0];
+  };
+
+  const daysOf = (p) => dayList(p.days, p.end);
 
   HNX.renderStats = async ({ main }) => {
     main.classList.add('hnx-main-stats');
@@ -545,6 +799,20 @@
     const progress = h('div', { class: 'hnx-st-progress', 'aria-hidden': 'true' }, h('span'));
     const body = h('div', { class: 'hnx-st-body' });
 
+    const picker = rangePicker((from, to) => {
+      const p = customPeriod(from, to);
+      if (!(period.custom && period.href === p.href)) history.pushState(null, '', p.href);
+      show(p);
+    });
+    const customTab = h('button', {
+      type: 'button',
+      class: 'hnx-st-tab',
+      'aria-haspopup': 'dialog',
+      'aria-expanded': 'false',
+      onclick: () => (picker.isOpen() ? picker.close() : picker.open(daysOf(period))),
+    }, 'Custom', icon('chevron'));
+    picker.bindToggle(customTab);
+
     const switcher = h(
       'div',
       { class: 'hnx-st-tabs hnx-st-periods', role: 'group', 'aria-label': 'Period' },
@@ -556,19 +824,22 @@
           onclick: (e) => {
             if (e.metaKey || e.ctrlKey || e.shiftKey) return;
             e.preventDefault();
+            picker.close();
             if (p === period) return;
             history.pushState(null, '', e.currentTarget.href);
             show(p);
           },
         }, p.label),
       ),
+      customTab,
     );
+    const periods = h('div', { class: 'hnx-st-periods-wrap' }, switcher, picker.el);
 
     main.append(
       h(
         'header',
         { class: 'hnx-st-head' },
-        h('div', { class: 'hnx-st-head-top' }, h('div', { class: 'hnx-st-kicker' }, h('span', { class: 'hnx-st-dot' }), kicker, range), switcher),
+        h('div', { class: 'hnx-st-head-top' }, h('div', { class: 'hnx-st-kicker' }, h('span', { class: 'hnx-st-dot' }), kicker, range), periods),
         title,
         lead,
         progress,
@@ -578,7 +849,7 @@
 
     const fill = async () => {
       const mine = ++run;
-      const days = dayList(period.days);
+      const days = daysOf(period);
       body.setAttribute('aria-busy', 'true');
       body.replaceChildren(skeleton());
       progress.hidden = false;
@@ -629,15 +900,18 @@
 
     const show = (p) => {
       period = p;
-      const days = dayList(p.days);
-      document.title = `${p.days === 1 ? 'Last full day' : `Last ${p.label}`} | Hacker News`;
-      kicker.textContent = p.days === 1 ? 'Last full day' : `Last ${p.label}`;
+      if (p.custom && `stats${location.search}` !== p.href) history.replaceState(null, '', p.href); // a clamped or swapped range
+      const days = daysOf(p);
+      const name = p.custom ? 'Custom range' : p.days === 1 ? 'Last full day' : `Last ${p.label}`;
+      document.title = `${p.custom ? p.title : name} | Hacker News`;
+      kicker.textContent = name;
       range.textContent =
         p.days === 1
           ? fmtDay(days[0], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
           : `${fmtDay(days[0], { month: 'short', day: 'numeric' })} – ${fmtDay(days.at(-1), { month: 'short', day: 'numeric', year: 'numeric' })}`;
       title.textContent = p.title;
-      for (const a of switcher.children) a.setAttribute('aria-current', String(Number(a.dataset.days) === p.days));
+      for (const a of switcher.children) a.setAttribute('aria-current', String(a === customTab ? !!p.custom : !p.custom && Number(a.dataset.days) === p.days));
+      picker.close(false);
       tip().classList.remove('hnx-show');
       fill();
     };
