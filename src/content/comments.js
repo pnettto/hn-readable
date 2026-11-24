@@ -265,7 +265,7 @@
 
   const toolbar = ({ total, newCount, prevVisit }) => {
     const section = () => document.querySelector('.hnx-comments');
-    const topOnly = h('button', { class: 'hnx-tool', type: 'button', 'aria-pressed': 'false', title: 'Show only top-level comments (T)', onclick: () => HNX.toggleTopOnly() }, icon('layers'), 'Top-level only');
+    const topOnly = h('button', { class: 'hnx-tool', type: 'button', 'aria-pressed': 'true', title: 'Show only top-level comments (T)', onclick: () => HNX.toggleTopOnly() }, icon('layers'), 'Top-level only');
     const expand = h('button', {
       class: 'hnx-tool', type: 'button', title: 'Expand every collapsed comment',
       onclick: () => {
@@ -343,7 +343,8 @@
     if (story || roots.length) {
       main.append(toolbar({ total: story?.comments ?? flat.length, newCount, prevVisit: prev?.t }));
     }
-    const section = h('section', { class: 'hnx-comments', 'aria-label': 'Comments' }, roots.map((c) => renderComment(c, ctx)));
+    // Threads open in top-level only mode; T or the toolbar button shows everything.
+    const section = h('section', { class: 'hnx-comments hnx-toponly', 'aria-label': 'Comments' }, roots.map((c) => renderComment(c, ctx)));
     if (!roots.length) section.append(h('div', { class: 'hnx-empty' }, story ? 'No comments yet. Start the conversation.' : 'No replies yet.'));
     main.append(section);
 

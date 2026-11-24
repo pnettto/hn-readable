@@ -21,7 +21,7 @@ Not affiliated with, endorsed by, or connected to Hacker News or Y Combinator.
 **Threads**
 - Collapsible comments, by clicking the thread line or the comment header
 - Comments added since the last visit to a thread are marked
-- Option to show top-level comments only
+- Threads open showing top-level comments only (toggle with `T` or the toolbar button)
 - Inline reply form
 - `OP` and `you` labels
 
