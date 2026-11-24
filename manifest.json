@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "HN Skin",
-  "short_name": "HN Skin",
+  "name": "HN Readable",
+  "short_name": "HN Readable",
   "version": "1.0.0",
   "description": "Alternative layout for Hacker News. Not affiliated with Hacker News or Y Combinator.",
   "icons": {
@@ -11,7 +11,7 @@
     "128": "icons/icon-128.png"
   },
   "action": {
-    "default_title": "HN Skin",
+    "default_title": "HN Readable",
     "default_popup": "src/popup/popup.html",
     "default_icon": {
       "16": "icons/icon-16.png",

@@ -98,7 +98,7 @@
       target.scrollIntoView();
     }
   } catch (err) {
-    console.error('[HN Skin] render failed, falling back to the original page', err);
+    console.error('[HN Readable] render failed, falling back to the original page', err);
     try {
       sessionStorage.setItem('hnx:off-once', '1');
     } catch {}

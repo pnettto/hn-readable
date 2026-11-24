@@ -90,7 +90,7 @@
       'footer',
       { class: 'hnx-footer' },
       h('nav', { class: 'hnx-footer-links' }, yc.length ? yc : [h('a', { href: 'newsguidelines.html' }, 'Guidelines'), h('a', { href: 'newsfaq.html' }, 'FAQ')]),
-      h('p', { class: 'hnx-footer-note' }, 'HN Skin (unofficial, not affiliated with HN) · press ', h('kbd', { class: 'hnx-kbd' }, '?'), ' for shortcuts'),
+      h('p', { class: 'hnx-footer-note' }, 'HN Readable (unofficial, not affiliated with HN) · press ', h('kbd', { class: 'hnx-kbd' }, '?'), ' for shortcuts'),
     );
 
     const toTop = h(
@@ -304,7 +304,7 @@
               h('section', null, h('h3', null, group), h('dl', null, rows.map(([k, d]) => [h('dt', null, k.split('  ').map((x) => h('kbd', { class: 'hnx-kbd' }, x))), h('dd', null, d)]))),
             ),
           ),
-          !HNX.settings.keyboard && h('p', { class: 'hnx-help-note' }, 'Shortcuts are currently turned off in the HN Skin popup.'),
+          !HNX.settings.keyboard && h('p', { class: 'hnx-help-note' }, 'Shortcuts are currently turned off in the HN Readable popup.'),
         ),
       );
       document.body.append(dlg);

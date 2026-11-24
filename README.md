@@ -1,4 +1,4 @@
-# HN Skin
+# HN Readable
 
 A Chrome extension that changes the layout of Hacker News. It works on top of the existing site, so voting, replying, hiding, favouriting and logging in still use HN's own pages and endpoints.
 
@@ -112,7 +112,7 @@ There is no build step. After editing, reload the extension in `chrome://extensi
 
 ```sh
 python3 scripts/make_icons.py   # regenerate icons
-zip -r hn-skin.zip manifest.json icons src -x '*.DS_Store'   # package
+zip -r hn-readable.zip manifest.json icons src -x '*.DS_Store'   # package
 ```
 
 ## Disclaimer
